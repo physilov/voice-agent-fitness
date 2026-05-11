@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.response_schema import UIComponent
 from app.db.models import NutritionLog, PersonalRecord, User, WorkoutLog, WorkoutPlan
+from app.events import EventType, emit
 from app.services.exercisedb import exercisedb_service
 
 # ── Tool definitions (passed directly to the Claude API) ─────────────────────
@@ -229,6 +230,7 @@ async def handle_tool_call(
         )
         db.add(log)
         await db.commit()
+        emit(EventType.WORKOUT_LOGGED, {"user_id": user.id})
         names = [e["name"] for e in tool_input["exercises"]]
         return f"Workout logged: {', '.join(names)}.", ui
 
@@ -318,6 +320,7 @@ async def handle_tool_call(
                     "previous_kg": existing_pr.weight_kg if existing_pr else None,
                 },
             ))
+            emit(EventType.PERSONAL_RECORD, {"user_id": user.id, "exercise": exercise, "weight_kg": weight})
             return f"NEW PERSONAL RECORD on {exercise}: {weight}kg x {reps} reps!", ui
         return f"Not a PR. Current best: {existing_pr.weight_kg}kg.", ui
 
