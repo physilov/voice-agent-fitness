@@ -16,6 +16,7 @@ def mock_user():
         fitness_level="intermediate",
         goals=["build muscle"],
         equipment=["barbell", "dumbbells"],
+        onboarding_complete=True,
     )
 
 

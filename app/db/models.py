@@ -25,6 +25,7 @@ class User(Base):
     equipment_context_expires_at = Column(DateTime)  # restore default after this
     preferred_days = Column(JSON)   # list[str]
     timezone = Column(String, default="UTC")
+    onboarding_complete = Column(Boolean, default=False)
     memory_summary = Column(Text)   # rolling AI-generated summary of conversation history
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
