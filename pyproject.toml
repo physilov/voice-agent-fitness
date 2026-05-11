@@ -19,6 +19,7 @@ dependencies = [
     "redis[asyncio]>=5.2.0",
     "deepgram-sdk>=3.7.0",
     "elevenlabs>=1.13.0",
+    "apscheduler>=3.10.0",
 ]
 
 [project.optional-dependencies]
