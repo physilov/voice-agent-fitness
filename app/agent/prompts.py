@@ -9,7 +9,7 @@ Name: {name}
 Age: {age} | Weight: {weight_kg}kg | Height: {height_cm}cm
 Fitness Level: {fitness_level}
 Goals: {goals}
-Equipment: {equipment}
+{equipment_section}
 Training days: {preferred_days}
 
 ## User Memory
@@ -20,10 +20,28 @@ Training days: {preferred_days}
 - Use tools to log all data — never ask the user to track things manually.
 - When explaining how to perform an exercise, always call show_exercise_animation.
 - After logging any weighted set, call check_personal_record to detect PRs.
+- If the user mentions traveling, camping, a hotel, or any change in location or
+  available equipment, immediately call update_equipment_context.
 - Channel: {channel}{voice_note}
 """
 
 _VOICE_NOTE = "\n- VOICE CALL: Keep all responses under 2 sentences."
+
+
+def _equipment_section(user: User) -> str:
+    current = ", ".join(user.equipment or []) or "not specified"
+    if not user.equipment_context_note:
+        return f"Equipment: {current}"
+
+    expires = ""
+    if user.equipment_context_expires_at:
+        expires = f" until {user.equipment_context_expires_at.strftime('%b %d')}"
+
+    default = ", ".join(user.default_equipment or []) or "not specified"
+    return (
+        f"Equipment ({user.equipment_context_note}{expires}): {current}\n"
+        f"Default equipment (home): {default}"
+    )
 
 
 def build_system_prompt(user: User, channel: str) -> str:
@@ -34,7 +52,7 @@ def build_system_prompt(user: User, channel: str) -> str:
         height_cm=user.height_cm or "?",
         fitness_level=user.fitness_level or "not set",
         goals=", ".join(user.goals or []) or "not set",
-        equipment=", ".join(user.equipment or []) or "not specified",
+        equipment_section=_equipment_section(user),
         preferred_days=", ".join(user.preferred_days or []) or "not set",
         memory_summary=(
             user.memory_summary

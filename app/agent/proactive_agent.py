@@ -107,6 +107,17 @@ async def run_proactive_check(user_id: str, db: AsyncSession) -> None:
     if not user or not user.phone_number:
         return
 
+    # Restore expired equipment context before building user context
+    if (
+        user.equipment_context_expires_at
+        and datetime.utcnow() >= user.equipment_context_expires_at
+    ):
+        if user.default_equipment is not None:
+            user.equipment = user.default_equipment
+        user.equipment_context_note = None
+        user.equipment_context_expires_at = None
+        await db.commit()
+
     last_contact = await _get_last_proactive_contact(user.id, db)
     if last_contact:
         hours_ago = (datetime.utcnow() - last_contact.created_at).total_seconds() / 3600

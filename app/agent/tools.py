@@ -166,6 +166,38 @@ TOOL_DEFINITIONS = [
             "required": ["exercise_name", "coaching_cues"],
         },
     },
+    {
+        "name": "update_equipment_context",
+        "description": (
+            "Update available equipment for the user's current situation. "
+            "Call whenever they mention traveling, camping, a hotel, visiting a gym, "
+            "or any change in location or available equipment."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "equipment": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Equipment currently available, e.g. ['bodyweight'] or ['dumbbells', 'cables']",
+                },
+                "context_note": {
+                    "type": "string",
+                    "description": "Brief label for the situation, e.g. 'camping trip', 'hotel gym', 'traveling'",
+                },
+                "expires_in_days": {
+                    "type": "integer",
+                    "description": "Days until default equipment is automatically restored. Omit if open-ended.",
+                },
+            },
+            "required": ["equipment", "context_note"],
+        },
+    },
+    {
+        "name": "restore_default_equipment",
+        "description": "Restore the user's default home equipment when they return from a trip or change of location.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
 ]
 
 
@@ -335,6 +367,30 @@ async def handle_tool_call(
             return "No personal records yet.", ui
         lines = [f"{pr.exercise_name}: {pr.weight_kg}kg x {pr.reps} reps" for pr in prs]
         return "Personal records:\n" + "\n".join(lines), ui
+
+    if tool_name == "update_equipment_context":
+        if user.default_equipment is None:
+            user.default_equipment = user.equipment or []
+        user.equipment = tool_input["equipment"]
+        user.equipment_context_note = tool_input["context_note"]
+        if tool_input.get("expires_in_days"):
+            user.equipment_context_expires_at = datetime.utcnow() + timedelta(
+                days=tool_input["expires_in_days"]
+            )
+        else:
+            user.equipment_context_expires_at = None
+        await db.commit()
+        items = ", ".join(tool_input["equipment"]) or "bodyweight only"
+        return f"Equipment updated for {tool_input['context_note']}: {items}.", ui
+
+    if tool_name == "restore_default_equipment":
+        if user.default_equipment is not None:
+            user.equipment = user.default_equipment
+        user.equipment_context_note = None
+        user.equipment_context_expires_at = None
+        await db.commit()
+        restored = ", ".join(user.equipment or []) or "none set"
+        return f"Default equipment restored: {restored}.", ui
 
     if tool_name == "show_exercise_animation":
         exercise_data = await exercisedb_service.get_exercise(db, tool_input["exercise_name"])

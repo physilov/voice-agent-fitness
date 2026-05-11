@@ -19,7 +19,10 @@ class User(Base):
     height_cm = Column(Float)
     fitness_level = Column(String)  # beginner | intermediate | advanced
     goals = Column(JSON)            # list[str]
-    equipment = Column(JSON)        # list[str]
+    equipment = Column(JSON)        # list[str] — current available equipment
+    default_equipment = Column(JSON)  # list[str] — home gym / permanent equipment
+    equipment_context_note = Column(String)       # e.g. "camping trip", "hotel gym"
+    equipment_context_expires_at = Column(DateTime)  # restore default after this
     preferred_days = Column(JSON)   # list[str]
     timezone = Column(String, default="UTC")
     memory_summary = Column(Text)   # rolling AI-generated summary of conversation history

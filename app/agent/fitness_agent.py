@@ -1,4 +1,5 @@
 import anthropic
+from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.memory import load_recent_messages, maybe_compress_memory, save_turn
@@ -9,12 +10,26 @@ from app.config import settings
 from app.db.models import User
 
 
+async def _maybe_restore_equipment(user: User, db: AsyncSession) -> None:
+    """Silently restore default equipment when a timed context has expired."""
+    if not user.equipment_context_expires_at:
+        return
+    if datetime.utcnow() < user.equipment_context_expires_at:
+        return
+    if user.default_equipment is not None:
+        user.equipment = user.default_equipment
+    user.equipment_context_note = None
+    user.equipment_context_expires_at = None
+    await db.commit()
+
+
 async def run_agent(
     user_text: str,
     user: User,
     channel: str,
     db: AsyncSession,
 ) -> CompoundResponse:
+    await _maybe_restore_equipment(user, db)
     client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
     history = await load_recent_messages(db, user.id)
     messages = history + [{"role": "user", "content": user_text}]
