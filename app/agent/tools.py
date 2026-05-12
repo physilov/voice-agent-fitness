@@ -1,11 +1,15 @@
+import json
+import re
 from collections import Counter
 from datetime import datetime, timedelta
 from typing import Any
 
+import anthropic
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.response_schema import UIComponent
+from app.config import settings
 from app.db.models import NutritionLog, PersonalRecord, User, WorkoutLog, WorkoutPlan
 from app.events import EventType, emit
 from app.services.exercisedb import exercisedb_service
@@ -16,7 +20,11 @@ from app.services.usda_food import search_food as usda_search_food
 TOOL_DEFINITIONS = [
     {
         "name": "update_user_profile",
-        "description": "Update the user's profile (goals, fitness level, equipment, age, weight, height).",
+        "description": (
+            "Update the user's profile. Call as soon as the user shares any personal detail — "
+            "name, age, weight, height, goal, fitness level, equipment, or preferred schedule. "
+            "Don't wait to collect everything first; save each piece as it arrives."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -37,7 +45,11 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "generate_workout_plan",
-        "description": "Generate and save a personalized multi-week workout plan for the user.",
+        "description": (
+            "Generate and save a personalized multi-week workout plan for the user. "
+            "Omit plan_data to have the plan content reasoned out automatically based on the user's profile. "
+            "Supply plan_data only when you already have a fully-specified structure to save."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -46,10 +58,14 @@ TOOL_DEFINITIONS = [
                 "days_per_week": {"type": "integer"},
                 "plan_data": {
                     "type": "object",
-                    "description": "Structured plan: {week_1: {monday: [{exercise, sets, reps, rest_seconds}]}}",
+                    "description": (
+                        "Optional. Structured plan: "
+                        "{week_1: {monday: [{exercise, sets, reps, rest_seconds}]}}. "
+                        "Omit to auto-generate from the user's profile."
+                    ),
                 },
             },
-            "required": ["name", "duration_weeks", "days_per_week", "plan_data"],
+            "required": ["name", "duration_weeks", "days_per_week"],
         },
     },
     {
@@ -220,6 +236,43 @@ TOOL_DEFINITIONS = [
 ]
 
 
+# ── Plan generation with extended thinking ───────────────────────────────────
+
+async def _generate_plan_with_thinking(
+    user: User,
+    name: str,
+    duration_weeks: int,
+    days_per_week: int,
+) -> dict:
+    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    prompt = (
+        f"Generate a detailed {duration_weeks}-week workout plan called \"{name}\" "
+        f"for {days_per_week} training days per week.\n\n"
+        f"User profile:\n"
+        f"- Fitness level: {user.fitness_level or 'not specified'}\n"
+        f"- Goals: {', '.join(user.goals or []) or 'not specified'}\n"
+        f"- Equipment: {', '.join(user.equipment or []) or 'not specified'}\n"
+        f"- Notes: {user.memory_summary or 'none'}\n\n"
+        "Return ONLY a valid JSON object (no markdown fences) with this structure:\n"
+        '{"week_1": {"monday": [{"exercise": "...", "sets": 3, "reps": 10, "rest_seconds": 60}], ...}, "week_2": {...}, ...}\n\n'
+        "Use only the listed equipment. Make the plan progressive across weeks."
+    )
+
+    response = await client.messages.create(
+        model="claude-opus-4-7",
+        max_tokens=4096,
+        thinking={"type": "adaptive"},
+        output_config={"effort": "high"},
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    text = next((block.text for block in response.content if hasattr(block, "text")), "{}")
+    match = re.search(r"```(?:json)?\s*([\s\S]+?)\s*```", text)
+    if match:
+        text = match.group(1)
+    return json.loads(text)
+
+
 # ── Tool handlers ─────────────────────────────────────────────────────────────
 
 async def handle_tool_call(
@@ -238,6 +291,14 @@ async def handle_tool_call(
         return "Profile updated.", ui
 
     if tool_name == "generate_workout_plan":
+        plan_data = tool_input.get("plan_data")
+        if not plan_data:
+            plan_data = await _generate_plan_with_thinking(
+                user,
+                tool_input["name"],
+                tool_input["duration_weeks"],
+                tool_input["days_per_week"],
+            )
         existing = await db.execute(
             select(WorkoutPlan).where(
                 WorkoutPlan.user_id == user.id, WorkoutPlan.is_active == True
@@ -250,7 +311,7 @@ async def handle_tool_call(
             name=tool_input["name"],
             duration_weeks=tool_input["duration_weeks"],
             days_per_week=tool_input["days_per_week"],
-            plan_data=tool_input["plan_data"],
+            plan_data=plan_data,
         )
         db.add(plan)
         await db.commit()

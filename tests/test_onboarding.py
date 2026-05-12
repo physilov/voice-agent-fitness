@@ -2,7 +2,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.agent.fitness_agent import run_agent
 from app.agent.onboarding_agent import run_onboarding
 from app.db.models import User
 
@@ -36,48 +35,6 @@ def _make_tool_response(tool_name: str, tool_input: dict, tool_id: str = "t1"):
     response.stop_reason = "tool_use"
     response.content = [block]
     return response
-
-
-# ── run_agent routing ─────────────────────────────────────────────────────────
-
-@pytest.mark.asyncio
-async def test_run_agent_routes_new_user_to_onboarding(new_user):
-    db = AsyncMock()
-    db.commit = AsyncMock()
-
-    with patch("app.agent.onboarding_agent.anthropic.AsyncAnthropic") as mock_cls, \
-         patch("app.agent.onboarding_agent.load_recent_messages", return_value=[]), \
-         patch("app.agent.onboarding_agent.save_turn", new_callable=AsyncMock):
-        mock_client = AsyncMock()
-        mock_cls.return_value = mock_client
-        mock_client.messages.create = AsyncMock(
-            return_value=_make_text_response("Hi! What's your name?")
-        )
-
-        response = await run_agent("Hello", new_user, "web", db)
-
-    assert "name" in response.text.lower() or "hi" in response.text.lower()
-
-
-@pytest.mark.asyncio
-async def test_run_agent_skips_onboarding_for_existing_user(new_user):
-    new_user.onboarding_complete = True
-    db = AsyncMock()
-    db.commit = AsyncMock()
-
-    with patch("app.agent.fitness_agent.anthropic.AsyncAnthropic") as mock_cls, \
-         patch("app.agent.fitness_agent.load_recent_messages", return_value=[]), \
-         patch("app.agent.fitness_agent.save_turn", new_callable=AsyncMock), \
-         patch("app.agent.fitness_agent.maybe_compress_memory", new_callable=AsyncMock):
-        mock_client = AsyncMock()
-        mock_cls.return_value = mock_client
-        mock_client.messages.create = AsyncMock(
-            return_value=_make_text_response("Here is your workout plan!")
-        )
-
-        response = await run_agent("Give me a plan", new_user, "web", db)
-
-    assert response.text == "Here is your workout plan!"
 
 
 # ── run_onboarding ────────────────────────────────────────────────────────────

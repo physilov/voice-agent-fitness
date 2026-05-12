@@ -49,6 +49,34 @@ async def test_run_agent_end_turn(mock_user, mock_db):
 
 
 @pytest.mark.asyncio
+async def test_run_agent_new_user_gets_coached_directly(mock_db):
+    """All users go through the same agent — no separate onboarding gate."""
+    new_user = User(
+        id="new-user",
+        phone_number="+15559990000",
+        onboarding_complete=False,
+    )
+    mock_response = MagicMock()
+    mock_response.stop_reason = "end_turn"
+    mock_response.content = [MagicMock(text="Hi! What's your name and goal?", type="text")]
+
+    with (
+        patch("app.agent.fitness_agent.load_recent_messages", return_value=[]),
+        patch("app.agent.fitness_agent.save_turn"),
+        patch("app.agent.fitness_agent.maybe_compress_memory"),
+        patch("app.agent.fitness_agent.anthropic.AsyncAnthropic") as mock_anthropic,
+    ):
+        mock_client = AsyncMock()
+        mock_anthropic.return_value = mock_client
+        mock_client.messages.create = AsyncMock(return_value=mock_response)
+
+        result = await run_agent("Hello", new_user, "web", mock_db)
+
+    assert isinstance(result, CompoundResponse)
+    assert result.text != ""
+
+
+@pytest.mark.asyncio
 async def test_run_agent_fallback_on_unknown_stop_reason(mock_user, mock_db):
     mock_response = MagicMock()
     mock_response.stop_reason = "max_tokens"

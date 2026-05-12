@@ -150,8 +150,10 @@ async def run_adaptation_for_user(user_id: str, db: AsyncSession) -> None:
     context = _build_context(plan, week_num, week_workouts)
     client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
     response = await client.messages.create(
-        model=settings.claude_model,
-        max_tokens=2048,
+        model="claude-opus-4-7",
+        max_tokens=4096,
+        thinking={"type": "adaptive"},
+        output_config={"effort": "high"},
         system=_SYSTEM_PROMPT,
         tools=_ADAPTATION_TOOLS,
         tool_choice={"type": "any"},

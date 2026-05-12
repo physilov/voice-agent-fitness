@@ -29,10 +29,6 @@ async def run_agent(
     channel: str,
     db: AsyncSession,
 ) -> CompoundResponse:
-    if not user.onboarding_complete:
-        from app.agent.onboarding_agent import run_onboarding
-        return await run_onboarding(user_text, user, channel, db)
-
     await _maybe_restore_equipment(user, db)
     client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
     history = await load_recent_messages(db, user.id)
@@ -43,7 +39,9 @@ async def run_agent(
     while True:
         response = await client.messages.create(
             model=settings.claude_model,
-            max_tokens=1024,
+            max_tokens=4096,
+            thinking={"type": "adaptive"},
+            output_config={"effort": "high"},
             system=system_prompt,
             tools=TOOL_DEFINITIONS,
             messages=messages,
