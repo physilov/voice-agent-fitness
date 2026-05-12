@@ -9,6 +9,7 @@ from app.agent.response_schema import UIComponent
 from app.db.models import NutritionLog, PersonalRecord, User, WorkoutLog, WorkoutPlan
 from app.events import EventType, emit
 from app.services.exercisedb import exercisedb_service
+from app.services.usda_food import search_food as usda_search_food
 
 # ── Tool definitions (passed directly to the Claude API) ─────────────────────
 
@@ -87,6 +88,24 @@ TOOL_DEFINITIONS = [
                 "notes": {"type": "string"},
             },
             "required": ["exercises"],
+        },
+    },
+    {
+        "name": "search_food",
+        "description": (
+            "Look up nutrition data for a food from the USDA database. "
+            "Always call this before log_nutrition so macros are accurate. "
+            "Returns up to 5 matches with calories, protein, carbs, fat per 100 g."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Food name to search, e.g. 'grilled chicken breast' or 'brown rice cooked'",
+                },
+            },
+            "required": ["query"],
         },
     },
     {
@@ -391,6 +410,20 @@ async def handle_tool_call(
         await db.commit()
         restored = ", ".join(user.equipment or []) or "none set"
         return f"Default equipment restored: {restored}.", ui
+
+    if tool_name == "search_food":
+        results = await usda_search_food(tool_input["query"])
+        if not results:
+            return f"No USDA data found for '{tool_input['query']}'. Estimate macros based on common values.", ui
+        lines = []
+        for r in results:
+            p = r["per_100g"]
+            lines.append(
+                f"- {r['name']} ({r['data_type']}): "
+                f"{p['calories']} kcal | {p['protein_g']}g protein | "
+                f"{p['carbs_g']}g carbs | {p['fat_g']}g fat  (per 100g)"
+            )
+        return "USDA results:\n" + "\n".join(lines), ui
 
     if tool_name == "show_exercise_animation":
         exercise_data = await exercisedb_service.get_exercise(db, tool_input["exercise_name"])

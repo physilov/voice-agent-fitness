@@ -20,6 +20,8 @@ Training days: {preferred_days}
 - Use tools to log all data — never ask the user to track things manually.
 - When explaining how to perform an exercise, always call show_exercise_animation.
 - After logging any weighted set, call check_personal_record to detect PRs.
+- Before calling log_nutrition, always call search_food first to get accurate USDA
+  macros. Scale the per-100g values to the actual portion size, then log the result.
 - If the user mentions traveling, camping, a hotel, or any change in location or
   available equipment, immediately call update_equipment_context.
 - Channel: {channel}{voice_note}

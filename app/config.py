@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     exercisedb_api_key: str = ""
     exercisedb_base_url: str = "https://exercisedb.p.rapidapi.com"
 
+    # USDA FoodData Central (free — DEMO_KEY works without registration)
+    usda_api_key: str = "DEMO_KEY"
+    usda_base_url: str = "https://api.nal.usda.gov/fdc/v1"
+
     # ElevenLabs
     elevenlabs_api_key: str = ""
     elevenlabs_voice_id: str = "21m00Tcm4TlvDq8ikWAM"
