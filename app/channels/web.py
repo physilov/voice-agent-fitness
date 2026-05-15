@@ -1,5 +1,4 @@
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, File, Form, UploadFile, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.fitness_agent import run_agent
@@ -11,15 +10,22 @@ from app.db.session import AsyncSessionLocal, get_db
 router = APIRouter()
 
 
-class ChatRequest(BaseModel):
-    phone_number: str
-    message: str
-
-
 @router.post("/chat", response_model=CompoundResponse)
-async def chat(request: ChatRequest, db: AsyncSession = Depends(get_db)):
-    user = await get_or_create_user(db, request.phone_number)
-    return await run_agent(request.message, user, Channel.WEB, db)
+async def chat(
+    phone_number: str = Form(...),
+    message: str = Form(""),
+    image: UploadFile | None = File(None),
+    db: AsyncSession = Depends(get_db),
+):
+    user = await get_or_create_user(db, phone_number)
+
+    image_data: bytes | None = None
+    image_media_type: str | None = None
+    if image and image.filename:
+        image_data = await image.read()
+        image_media_type = image.content_type or "image/jpeg"
+
+    return await run_agent(message, user, Channel.WEB, db, image_data=image_data, image_media_type=image_media_type)
 
 
 @router.websocket("/ws/{phone_number}")

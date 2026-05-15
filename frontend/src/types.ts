@@ -13,6 +13,7 @@ export interface Message {
   role: 'user' | 'assistant'
   text: string
   ui_components: UIComponent[]
+  image_url?: string
 }
 
 // ── Per-component data shapes ─────────────────────────────────────────────────

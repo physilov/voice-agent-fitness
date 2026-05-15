@@ -1,4 +1,5 @@
 import anthropic
+import base64
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,11 +29,32 @@ async def run_agent(
     user: User,
     channel: str,
     db: AsyncSession,
+    image_data: bytes | None = None,
+    image_media_type: str | None = None,
 ) -> CompoundResponse:
     await _maybe_restore_equipment(user, db)
     client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
     history = await load_recent_messages(db, user.id)
-    messages = history + [{"role": "user", "content": user_text}]
+
+    if image_data and image_media_type:
+        user_content: list | str = [
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": image_media_type,
+                    "data": base64.b64encode(image_data).decode(),
+                },
+            },
+            {
+                "type": "text",
+                "text": user_text or "I sent a photo of my meal. Identify the foods and portions, look up their nutrition data, and log the meal for me.",
+            },
+        ]
+    else:
+        user_content = user_text
+
+    messages = history + [{"role": "user", "content": user_content}]
     system_prompt = build_system_prompt(user, channel)
     all_ui: list[UIComponent] = []
 
@@ -51,7 +73,8 @@ async def run_agent(
             text = next(
                 (block.text for block in response.content if hasattr(block, "text")), ""
             )
-            await save_turn(db, user.id, user_text, text, channel)
+            text_to_save = user_text or "[meal photo]"
+            await save_turn(db, user.id, text_to_save, text, channel)
             await maybe_compress_memory(db, user)
             return CompoundResponse(text=text, ui_components=all_ui)
 

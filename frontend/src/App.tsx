@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import type { FormEvent } from 'react'
-import { Send, Dumbbell } from 'lucide-react'
+import { Send, Dumbbell, ImagePlus, X } from 'lucide-react'
 import { sendMessage } from './api'
 import UIComponentRenderer from './components/UIComponentRenderer'
 import type { Message } from './types'
@@ -54,15 +54,24 @@ function ChatBubble({ msg }: { msg: Message }) {
             <span className="text-xs text-purple-400 font-medium">Apex</span>
           </div>
         )}
-        <div
-          className={`px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
-            isUser
-              ? 'bg-purple-600 text-white rounded-br-sm'
-              : 'bg-gray-800 text-gray-100 rounded-bl-sm'
-          }`}
-        >
-          {msg.text}
-        </div>
+        {msg.image_url && (
+          <img
+            src={msg.image_url}
+            alt="meal"
+            className="rounded-xl mb-1 max-h-48 object-cover"
+          />
+        )}
+        {msg.text && (
+          <div
+            className={`px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
+              isUser
+                ? 'bg-purple-600 text-white rounded-br-sm'
+                : 'bg-gray-800 text-gray-100 rounded-bl-sm'
+            }`}
+          >
+            {msg.text}
+          </div>
+        )}
         {msg.ui_components.map((c, i) => (
           <UIComponentRenderer key={i} component={c} />
         ))}
@@ -92,12 +101,29 @@ export default function App() {
   const [phone, setPhone] = useState<string | null>(savedPhone)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
+  const [selectedImage, setSelectedImage] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
+
+  function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setSelectedImage(file)
+    setImagePreview(URL.createObjectURL(file))
+    e.target.value = ''
+  }
+
+  function clearImage() {
+    setSelectedImage(null)
+    if (imagePreview) URL.revokeObjectURL(imagePreview)
+    setImagePreview(null)
+  }
 
   if (!phone) {
     return <PhoneSetup onDone={setPhone} />
@@ -106,20 +132,28 @@ export default function App() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     const text = input.trim()
-    if (!text || loading) return
+    if ((!text && !selectedImage) || loading) return
 
     const userMsg: Message = {
       id: crypto.randomUUID(),
       role: 'user',
       text,
       ui_components: [],
+      image_url: imagePreview ?? undefined,
     }
     setMessages((prev) => [...prev, userMsg])
     setInput('')
+
+    const imageToSend = selectedImage
+    const previewToRevoke = imagePreview
+    setSelectedImage(null)
+    setImagePreview(null)
+
     setLoading(true)
 
     try {
-      const res = await sendMessage(phone!, text)
+      const res = await sendMessage(phone!, text, imageToSend ?? undefined)
+      if (previewToRevoke) URL.revokeObjectURL(previewToRevoke)
       const assistantMsg: Message = {
         id: crypto.randomUUID(),
         role: 'assistant',
@@ -128,6 +162,7 @@ export default function App() {
       }
       setMessages((prev) => [...prev, assistantMsg])
     } catch {
+      if (previewToRevoke) URL.revokeObjectURL(previewToRevoke)
       setMessages((prev) => [
         ...prev,
         {
@@ -181,22 +216,58 @@ export default function App() {
         <div ref={bottomRef} />
       </div>
 
+      {/* Image preview strip */}
+      {imagePreview && (
+        <div className="px-4 pt-2 flex items-start gap-2">
+          <div className="relative">
+            <img
+              src={imagePreview}
+              alt="preview"
+              className="h-20 w-20 object-cover rounded-xl border border-gray-600"
+            />
+            <button
+              type="button"
+              onClick={clearImage}
+              className="absolute -top-2 -right-2 bg-gray-700 hover:bg-gray-600 text-white rounded-full p-0.5 transition-colors"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Input */}
       <form
         onSubmit={handleSubmit}
-        className="px-4 py-4 border-t border-gray-800 flex gap-3"
+        className="px-4 py-4 border-t border-gray-800 flex gap-3 items-center"
       >
         <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleImageSelect}
+        />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={loading}
+          className="text-gray-400 hover:text-purple-400 disabled:opacity-40 transition-colors p-1 flex-shrink-0"
+          title="Attach meal photo"
+        >
+          <ImagePlus size={20} />
+        </button>
+        <input
           className="flex-1 bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 transition-colors"
-          placeholder="Message Apex..."
+          placeholder={selectedImage ? 'Add a note (optional)…' : 'Message Apex…'}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           disabled={loading}
         />
         <button
           type="submit"
-          disabled={loading || !input.trim()}
-          className="bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white p-3 rounded-xl transition-colors"
+          disabled={loading || (!input.trim() && !selectedImage)}
+          className="bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white p-3 rounded-xl transition-colors flex-shrink-0"
         >
           <Send size={18} />
         </button>

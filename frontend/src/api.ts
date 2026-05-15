@@ -8,12 +8,14 @@ interface ChatResponse {
 export async function sendMessage(
   phoneNumber: string,
   message: string,
+  image?: File,
 ): Promise<ChatResponse> {
-  const res = await fetch('/web/chat', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ phone_number: phoneNumber, message }),
-  })
+  const form = new FormData()
+  form.append('phone_number', phoneNumber)
+  form.append('message', message)
+  if (image) form.append('image', image)
+
+  const res = await fetch('/web/chat', { method: 'POST', body: form })
   if (!res.ok) throw new Error(`Server error: ${res.status}`)
   return res.json()
 }
