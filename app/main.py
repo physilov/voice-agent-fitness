@@ -4,13 +4,14 @@ from app.db.session import init_db
 from app.channels.whatsapp import router as whatsapp_router
 from app.channels.voice_call import router as voice_router
 from app.channels.web import router as web_router
-from app.scheduler import start_scheduler, stop_scheduler
+from app.scheduler import load_reminders, start_scheduler, stop_scheduler
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
     start_scheduler()
+    await load_reminders()
     yield
     stop_scheduler()
 

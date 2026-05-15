@@ -5,6 +5,7 @@ export interface UIComponent {
     | 'progress_chart'
     | 'nutrition_breakdown'
     | 'pr_celebration'
+    | 'weight_trend_chart'
   data: Record<string, unknown>
 }
 
@@ -59,4 +60,12 @@ export interface PRCelebrationData {
   weight_kg: number
   reps: number
   previous_kg?: number
+}
+
+export interface WeightTrendData {
+  entries: { date: string; weight_kg: number }[]
+  period_days: number
+  start_weight: number
+  current_weight: number
+  change_kg: number
 }

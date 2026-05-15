@@ -106,6 +106,31 @@ class ConversationMessage(Base):
     user = relationship("User", back_populates="conversation_messages")
 
 
+class WeightLog(Base):
+    __tablename__ = "weight_logs"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    weight_kg = Column(Float, nullable=False)
+    notes = Column(Text)
+    logged_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Reminder(Base):
+    __tablename__ = "reminders"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    label = Column(String, nullable=False)        # "Workout reminder"
+    message = Column(String, nullable=False)      # text sent via WhatsApp
+    days = Column(JSON, nullable=False)           # ["monday", "wednesday"] or ["daily"]
+    hour = Column(Integer, nullable=False)
+    minute = Column(Integer, nullable=False, default=0)
+    timezone = Column(String, nullable=False, default="UTC")
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class ExerciseCache(Base):
     """Cached ExerciseDB API results — avoids repeated API calls for the same exercise."""
     __tablename__ = "exercise_cache"

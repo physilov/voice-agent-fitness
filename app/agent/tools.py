@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.response_schema import UIComponent
 from app.config import settings
-from app.db.models import NutritionLog, PersonalRecord, User, WorkoutLog, WorkoutPlan
+from app.db.models import NutritionLog, PersonalRecord, Reminder, User, WeightLog, WorkoutLog, WorkoutPlan
 from app.events import EventType, emit
 from app.services.exercisedb import exercisedb_service
 from app.services.usda_food import search_food as usda_search_food
@@ -232,6 +232,70 @@ TOOL_DEFINITIONS = [
         "name": "restore_default_equipment",
         "description": "Restore the user's default home equipment when they return from a trip or change of location.",
         "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "log_weight",
+        "description": "Log the user's body weight. Call whenever the user mentions their current weight.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "weight_kg": {"type": "number"},
+                "notes": {"type": "string"},
+            },
+            "required": ["weight_kg"],
+        },
+    },
+    {
+        "name": "get_weight_trend",
+        "description": "Show the user's weight history as a chart. Call when they ask about weight progress or trends.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "period_days": {"type": "integer", "description": "Days to look back (e.g. 30, 90)"},
+            },
+            "required": ["period_days"],
+        },
+    },
+    {
+        "name": "schedule_reminder",
+        "description": (
+            "Schedule a recurring WhatsApp reminder for the user. "
+            "Call when the user asks to be reminded about workouts, logging meals, or any habit."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "label": {"type": "string", "description": "Short name, e.g. 'Morning workout'"},
+                "message": {"type": "string", "description": "The message to send, e.g. 'Time to hit the gym!'"},
+                "days": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": ["daily", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"],
+                    },
+                    "description": "Days to send the reminder. Use ['daily'] for every day.",
+                },
+                "hour": {"type": "integer", "description": "Hour in 24h format (0-23) in the user's timezone"},
+                "minute": {"type": "integer", "description": "Minute (0-59), defaults to 0"},
+            },
+            "required": ["label", "message", "days", "hour"],
+        },
+    },
+    {
+        "name": "list_reminders",
+        "description": "List all active reminders for the user.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "cancel_reminder",
+        "description": "Cancel an active reminder by its ID.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "reminder_id": {"type": "string"},
+            },
+            "required": ["reminder_id"],
+        },
     },
 ]
 
@@ -495,5 +559,99 @@ async def handle_tool_call(
             ))
             return f"Showing animation for {tool_input['exercise_name']}.", ui
         return f"Animation not found for {tool_input['exercise_name']}.", ui
+
+    if tool_name == "log_weight":
+        log = WeightLog(
+            user_id=user.id,
+            weight_kg=tool_input["weight_kg"],
+            notes=tool_input.get("notes"),
+        )
+        db.add(log)
+        user.weight_kg = tool_input["weight_kg"]
+        await db.commit()
+        return f"Weight logged: {tool_input['weight_kg']} kg.", ui
+
+    if tool_name == "get_weight_trend":
+        since = datetime.utcnow() - timedelta(days=tool_input["period_days"])
+        result = await db.execute(
+            select(WeightLog)
+            .where(WeightLog.user_id == user.id, WeightLog.logged_at >= since)
+            .order_by(WeightLog.logged_at)
+        )
+        entries = result.scalars().all()
+        if not entries:
+            return "No weight data for this period.", ui
+        data_points = [
+            {"date": e.logged_at.strftime("%b %d"), "weight_kg": e.weight_kg}
+            for e in entries
+        ]
+        change = round(entries[-1].weight_kg - entries[0].weight_kg, 1)
+        ui.append(UIComponent(
+            type="weight_trend_chart",
+            data={
+                "entries": data_points,
+                "period_days": tool_input["period_days"],
+                "start_weight": entries[0].weight_kg,
+                "current_weight": entries[-1].weight_kg,
+                "change_kg": change,
+            },
+        ))
+        direction = "↓" if change < 0 else "↑"
+        return (
+            f"Weight over {tool_input['period_days']} days: "
+            f"{entries[0].weight_kg} kg → {entries[-1].weight_kg} kg ({change:+.1f} kg {direction})."
+        ), ui
+
+    if tool_name == "schedule_reminder":
+        from app.scheduler import add_reminder
+        tz = user.timezone or "UTC"
+        reminder = Reminder(
+            user_id=user.id,
+            label=tool_input["label"],
+            message=tool_input["message"],
+            days=tool_input["days"],
+            hour=tool_input["hour"],
+            minute=tool_input.get("minute", 0),
+            timezone=tz,
+        )
+        db.add(reminder)
+        await db.commit()
+        await db.refresh(reminder)
+        add_reminder(reminder)
+        days_str = ", ".join(tool_input["days"])
+        time_str = f"{tool_input['hour']:02d}:{tool_input.get('minute', 0):02d}"
+        return f"Reminder set: '{tool_input['label']}' — {days_str} at {time_str} ({tz}).", ui
+
+    if tool_name == "list_reminders":
+        result = await db.execute(
+            select(Reminder)
+            .where(Reminder.user_id == user.id, Reminder.is_active == True)
+            .order_by(Reminder.created_at)
+        )
+        reminders = result.scalars().all()
+        if not reminders:
+            return "No active reminders.", ui
+        lines = []
+        for r in reminders:
+            days_str = ", ".join(r.days)
+            time_str = f"{r.hour:02d}:{r.minute:02d} {r.timezone}"
+            lines.append(f"[{r.id[:8]}] {r.label}: {days_str} at {time_str}")
+        return "Active reminders:\n" + "\n".join(lines), ui
+
+    if tool_name == "cancel_reminder":
+        from app.scheduler import remove_reminder
+        result = await db.execute(
+            select(Reminder).where(
+                Reminder.id == tool_input["reminder_id"],
+                Reminder.user_id == user.id,
+            )
+        )
+        reminder = result.scalar_one_or_none()
+        if not reminder:
+            return "Reminder not found.", ui
+        reminder.is_active = False
+        await db.commit()
+        remove_reminder(reminder.id)
+        return f"Reminder '{reminder.label}' cancelled.", ui
 
     return f"Unknown tool: {tool_name}", ui
