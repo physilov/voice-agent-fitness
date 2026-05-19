@@ -497,6 +497,29 @@ async def handle_tool_call(
                 },
             ))
             emit(EventType.PERSONAL_RECORD, {"user_id": user.id, "exercise": exercise, "weight_kg": weight})
+            # Send PR card via WhatsApp (non-blocking — don't fail if it errors)
+            try:
+                from app.services.card_generator import generate_pr_card
+                from app.services.media_store import save as save_media
+                from app.services.twilio_service import send_whatsapp_image
+                card_bytes = generate_pr_card(
+                    user_name=user.name or "Athlete",
+                    exercise=exercise,
+                    weight_kg=weight,
+                    reps=reps,
+                    previous_kg=existing_pr.weight_kg if existing_pr else None,
+                )
+                filename = save_media(card_bytes)
+                from app.config import settings as _settings
+                media_url = f"{_settings.base_url}/media/{filename}"
+                if user.phone_number:
+                    await send_whatsapp_image(
+                        user.phone_number,
+                        media_url,
+                        f"🏆 New PR on {exercise}: {weight}kg × {reps} reps!",
+                    )
+            except Exception:
+                pass  # card send failure must never break the tool response
             return f"NEW PERSONAL RECORD on {exercise}: {weight}kg x {reps} reps!", ui
         return f"Not a PR. Current best: {existing_pr.weight_kg}kg.", ui
 
