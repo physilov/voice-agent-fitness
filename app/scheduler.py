@@ -5,6 +5,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from app.tasks.proactive_check import run_proactive_checks
 from app.tasks.weekly_adaptation import run_weekly_adaptations
+from app.tasks.weekly_recap import run_weekly_recaps
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,15 @@ def start_scheduler() -> None:
         day_of_week="sun",
         hour=20,
         id="weekly_adaptations",
+        replace_existing=True,
+    )
+    _scheduler.add_job(
+        run_weekly_recaps,
+        trigger="cron",
+        day_of_week="sun",
+        hour=18,
+        minute=0,
+        id="weekly_recaps",
         replace_existing=True,
     )
     _scheduler.start()

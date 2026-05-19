@@ -20,6 +20,15 @@ async def send_whatsapp_message(to: str, body: str):
     )
 
 
+async def send_whatsapp_image(to: str, media_url: str, caption: str = "") -> None:
+    get_twilio_client().messages.create(
+        from_=settings.twilio_whatsapp_number,
+        to=f"whatsapp:{to}",
+        media_url=[media_url],
+        body=caption,
+    )
+
+
 async def initiate_outbound_call(to: str, callback_url: str):
     """Initiate a proactive outbound call, e.g. for a scheduled check-in."""
     get_twilio_client().calls.create(
